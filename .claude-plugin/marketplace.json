@@ -1,0 +1,13 @@
+{
+  "name": "claude-learns-marketplace",
+  "owner": {
+    "name": "Aditya Gupta"
+  },
+  "plugins": [
+    {
+      "name": "claude-learns",
+      "source": "./",
+      "description": "Semantic correction capture: extracts learnings from full session transcripts with a cheap model, then routes them by tier (hook / CLAUDE.md / memory) under human review"
+    }
+  ]
+}
