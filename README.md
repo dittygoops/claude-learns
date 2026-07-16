@@ -21,12 +21,20 @@ claude-learns takes a different approach:
    that fits*, instead of all becoming CLAUDE.md bullets:
    - **mechanical** (bannable tokens, formatting, required commands) → a
      generated hook or lint rule that *enforces* the behavior deterministically
-   - **judgment** (style, scope, approach) → one tight, example-laden
-     CLAUDE.md bullet
+   - **judgment** (style, scope, approach) → the rules registry, compiled
+     into CLAUDE.md
    - **fact** (names, paths, conventions) → memory, not rules
-4. **Recurrence tracking** — if a new correction matches a rule you already
-   have, `/learn` flags it: the rule isn't working, so sharpen it or promote
-   it to a harder tier.
+4. **The rules registry** — approved rules live in `rules.json`
+   (`.claude/rules.json` per project, `~/.claude/rules.json` global), tagged
+   by *activity* (`prd-writing`, `git-commits`, ...). CLAUDE.md is a compiled
+   artifact: universal rules inline, and once the rule count grows past a
+   threshold, activity groups move to `.claude/rules/<activity>.md` with a
+   one-line pointer, so the always-loaded context stays small no matter how
+   many rules accumulate. The compiler only touches its marker-delimited
+   block; your hand-written CLAUDE.md content is preserved.
+5. **Recurrence tracking** — if a new correction matches a registry rule,
+   `/learn` logs a violation against it instead of re-proposing it. Rules
+   that keep accumulating violations get sharpened or promoted to a hook.
 
 ## Install
 
