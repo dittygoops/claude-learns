@@ -50,11 +50,16 @@ Set `CLAUDE_LEARNS_MODEL` to override the model.
 
 ## How it avoids footguns
 
+- The SessionEnd hook returns in milliseconds: it spawns a detached worker
+  process that does the extraction, so session exit is never blocked and the
+  hook can't be cancelled mid-extraction (long transcripts can take minutes).
+- Worker results and failures are logged to `claude-learns.log` next to the
+  queue; the SessionStart reminder surfaces new learnings the next session.
 - An env guard (`CLAUDE_LEARNS_EXTRACTING`) prevents the extraction
   subprocess's own session from re-triggering the hook.
-- Extraction failures never block session exit.
 - Trivial sessions (fewer than two user messages) are skipped.
-- Near-duplicate rules are deduped by content hash at queue time.
+- Exact-duplicate rules are deduped by content hash at queue time;
+  near-duplicates (same rule, different words) are merged during `/learn`.
 
 ## License
 

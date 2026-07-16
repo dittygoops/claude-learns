@@ -6,11 +6,18 @@ to extract corrections, preferences, and facts (judged semantically, so they
 can appear anywhere in a message), and appends them to the project's queue
 for later human review via /learn.
 
+The hook itself returns immediately: it validates the payload, then respawns
+this script detached (--worker) so extraction never blocks session exit or
+gets cancelled by the hook timeout. Results land in the queue; the
+SessionStart reminder surfaces them next session. Worker activity is logged
+to claude-learns.log next to the queue.
+
 Safety:
 - CLAUDE_LEARNS_EXTRACTING env guard prevents the extraction subprocess's own
   session from re-triggering this hook (infinite loop).
 - Sessions with fewer than MIN_USER_MESSAGES user messages are skipped.
 - One model call per session, dialogue capped at MAX_DIALOGUE chars.
+- The model subprocess runs with --strict-mcp-config so it skips MCP servers.
 """
 import hashlib
 import json
@@ -125,9 +132,9 @@ def condense(path):
 def extract(dialogue):
     env = dict(os.environ, CLAUDE_LEARNS_EXTRACTING="1")
     result = subprocess.run(
-        ["claude", "-p", "--model", MODEL],
+        ["claude", "-p", "--model", MODEL, "--strict-mcp-config"],
         input=EXTRACTION_PROMPT + dialogue,
-        capture_output=True, text=True, timeout=150, env=env,
+        capture_output=True, text=True, timeout=600, env=env,
     )
     out = result.stdout.strip()
     if out.startswith("```"):
@@ -168,7 +175,39 @@ def append_to_queue(queue_path, learnings, session_id):
     return added, len(existing)
 
 
-def main():
+def log(transcript_path, msg):
+    log_path = os.path.join(os.path.dirname(transcript_path), "claude-learns.log")
+    try:
+        with open(log_path, "a") as f:
+            f.write(f"{datetime.now(timezone.utc).isoformat()} {msg}\n")
+    except OSError:
+        pass
+
+
+def worker(transcript_path, session_id):
+    """Detached worker: condense, extract, append. May take minutes."""
+    try:
+        dialogue, n_user = condense(transcript_path)
+    except OSError as e:
+        log(transcript_path, f"session {session_id}: condense failed: {e}")
+        return
+    if n_user < MIN_USER_MESSAGES or not dialogue.strip():
+        return
+
+    try:
+        learnings = extract(dialogue)
+    except Exception as e:
+        log(transcript_path, f"session {session_id}: extraction failed: {e}")
+        return
+
+    queue_path = os.path.join(os.path.dirname(transcript_path), QUEUE_NAME)
+    added, total = append_to_queue(queue_path, learnings, session_id)
+    log(transcript_path, f"session {session_id}: extracted {len(learnings)}, "
+                         f"queued {added} new ({total} total)")
+
+
+def hook():
+    """SessionEnd hook: validate payload, spawn detached worker, return fast."""
     if os.environ.get("CLAUDE_LEARNS_EXTRACTING"):
         return  # we ARE the extraction subprocess; never recurse
 
@@ -181,25 +220,17 @@ def main():
     if not transcript_path or not os.path.exists(transcript_path):
         return
 
-    try:
-        dialogue, n_user = condense(transcript_path)
-    except OSError:
-        return
-    if n_user < MIN_USER_MESSAGES or not dialogue.strip():
-        return
-
-    try:
-        learnings = extract(dialogue)
-    except Exception:
-        return  # never block session exit on extraction failure
-    if not learnings:
-        return
-
-    queue_path = os.path.join(os.path.dirname(transcript_path), QUEUE_NAME)
-    added, total = append_to_queue(queue_path, learnings, data.get("session_id", ""))
-    if added:
-        print(f"claude-learns: captured {added} learning(s) ({total} queued). Run /learn to review.")
+    devnull = open(os.devnull, "r+b")
+    subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--worker",
+         transcript_path, data.get("session_id", "")],
+        stdin=devnull, stdout=devnull, stderr=devnull,
+        start_new_session=True,  # survive the parent session's exit
+    )
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "--worker":
+        worker(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")
+    else:
+        hook()
