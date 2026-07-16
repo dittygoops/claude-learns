@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""claude-learns SessionStart hook: remind the user when learnings are queued."""
+"""claude-learns SessionStart hook: remind the user when learnings are queued.
+
+Plain stdout from a SessionStart hook is injected into Claude's context, not
+shown to the user. To surface the reminder in the terminal we emit JSON with
+a `systemMessage` (displayed to the user) and also pass the note to Claude
+via hookSpecificOutput.additionalContext.
+"""
 import json
 import os
 import sys
@@ -25,8 +31,17 @@ def main():
             queue = json.load(f)
     except (json.JSONDecodeError, OSError):
         return
-    if queue:
-        print(f"claude-learns: {len(queue)} learning(s) queued for this project. Run /learn to review.")
+    if not queue:
+        return
+    note = (f"claude-learns: {len(queue)} learning(s) queued for this project. "
+            f"Run /learn to review.")
+    print(json.dumps({
+        "systemMessage": note,
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": note,
+        },
+    }))
 
 
 if __name__ == "__main__":
