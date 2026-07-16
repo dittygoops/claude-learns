@@ -1,6 +1,6 @@
 {
   "name": "claude-learns",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Semantic correction capture for Claude Code: extracts learnings from full session transcripts with a cheap model, then routes them by tier (hook / CLAUDE.md / memory) under human review",
   "author": {
     "name": "Aditya Gupta"
